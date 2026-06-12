@@ -41,3 +41,7 @@ backend. Clearing site data resets the tracker.
   timeout and automatic retries. For faster, more reliable data, grab a free
   key at [dev.pokemontcg.io](https://dev.pokemontcg.io) and set it via the ⚙
   button in the Market tab (stored in localStorage).
+- All prices are shown in **AUD**. TCGplayer market prices arrive in USD and
+  are converted at fetch time using the daily USD→AUD rate from
+  [frankfurter.app](https://frankfurter.app) (cached per day; manual price
+  logs are assumed to already be AUD).

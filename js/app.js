@@ -14,6 +14,7 @@ const KEYS = {
   names: 'shiny.names.v1',
   sets: 'shiny.sets.v1',
   apiKey: 'shiny.tcgApiKey.v1',
+  fx: 'shiny.fxAud.v1',
 };
 
 const state = {
@@ -28,8 +29,30 @@ const state = {
 };
 
 const $ = (sel) => document.querySelector(sel);
-const fmt$ = (n) => '$' + Number(n).toFixed(2);
+const fmt$ = (n) => 'A$' + Number(n).toFixed(2);
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/* ---------------- USD→AUD exchange rate ----------------
+   TCGplayer market prices are USD; everything in the app is shown and
+   stored in AUD. Live rate from frankfurter.app, cached for the day. */
+
+let fxRate = 1.55; // fallback if offline and nothing cached
+const usdToAud = (usd) => usd * fxRate;
+
+async function loadFx() {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(KEYS.fx) || 'null'); } catch { /* ignore */ }
+  if (cached?.rate) fxRate = cached.rate;
+  if (cached?.date === todayISO()) return;
+  try {
+    const res = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD');
+    const d = await res.json();
+    if (d?.rates?.AUD) {
+      fxRate = d.rates.AUD;
+      localStorage.setItem(KEYS.fx, JSON.stringify({ rate: fxRate, date: todayISO() }));
+    }
+  } catch { /* keep cached/fallback rate */ }
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /* ---------------- persistence ---------------- */
@@ -180,8 +203,8 @@ async function renderDrawer() {
   const body = $('#drawer-body');
   body.innerHTML = `
     <div class="drawer-art-wrap">
-      <img class="drawer-art ${caught ? '' : 'uncaught'}" src="${shinyArt(n)}"
-           onerror="this.onerror=null;this.src='${normalArt(n)}'" alt="${nameOf(n)}">
+      <img class="drawer-art ${caught ? '' : 'uncaught'}" src="${normalArt(n)}"
+           onerror="this.onerror=null;this.src='${shinyArt(n)}'" alt="${nameOf(n)}">
     </div>
     <h2 class="drawer-title">${nameOf(n)}</h2>
     <div class="drawer-sub">#${String(n).padStart(4, '0')}</div>
@@ -573,7 +596,7 @@ function drawChart(card) {
     ctx.moveTo(pad.l, y);
     ctx.lineTo(w - pad.r, y);
     ctx.stroke();
-    ctx.fillText('$' + val.toFixed(val >= 100 ? 0 : 2), pad.l - 6, y + 3);
+    ctx.fillText('A$' + val.toFixed(val >= 100 ? 0 : 2), pad.l - 6, y + 3);
   }
 
   // x labels (first / last date)
@@ -699,7 +722,8 @@ async function runTcgSearch(e) {
     }
     results.innerHTML = '';
     for (const tc of cards) {
-      const price = tcgMarketPrice(tc);
+      const usd = tcgMarketPrice(tc);
+      const price = usd != null ? usdToAud(usd) : null;
       const row = document.createElement('div');
       row.className = 'tcg-result';
       row.innerHTML = `
@@ -751,8 +775,9 @@ async function refreshPrice() {
     const { data } = await tcgFetch(`/cards/${card.tcgId}`, {
       onRetry: (attempt, max) => { btn.textContent = `↻ Retrying (${attempt}/${max})…`; },
     });
-    const price = tcgMarketPrice(data);
-    if (price == null) throw new Error('no market price on this printing');
+    const usd = tcgMarketPrice(data);
+    if (usd == null) throw new Error('no market price on this printing');
+    const price = usdToAud(usd);
     // replace today's tcg entry if one exists, else append
     const today = todayISO();
     const existing = card.priceHistory.find(p => p.date === today && p.source === 'tcg');
@@ -876,6 +901,7 @@ function init() {
   wireEvents();
   updateHeaderStats();
   loadNames();
+  loadFx();
 }
 
 init();
