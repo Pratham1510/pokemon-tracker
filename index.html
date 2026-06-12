@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✨ Shiny Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="bg-glow"></div>
+
+<header class="app-header">
+  <div class="logo">
+    <span class="logo-orb"></span>
+    <h1>Shiny<span class="holo-text">Tracker</span></h1>
+  </div>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" data-view="dex">Pokédex</button>
+    <button class="nav-tab" data-view="collection">Collection</button>
+    <button class="nav-tab" data-view="market">Market</button>
+  </nav>
+
+  <div class="header-stats">
+    <div class="stat-pill">
+      <span class="stat-label">Shinies</span>
+      <span class="stat-value" id="stat-caught">0 / 1025</span>
+      <div class="stat-bar"><div class="stat-bar-fill" id="stat-bar-fill"></div></div>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-label">Collection value</span>
+      <span class="stat-value holo-text" id="stat-value">$0.00</span>
+    </div>
+  </div>
+</header>
+
+<main class="app-main">
+
+  <!-- ================= POKÉDEX VIEW ================= -->
+  <section class="view active" id="view-dex">
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="dex-search" placeholder="Search by name or number…" autocomplete="off">
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="dex-caught-only">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        Caught only
+      </label>
+    </div>
+    <div class="dex-grid" id="dex-grid"></div>
+  </section>
+
+  <!-- ================= COLLECTION VIEW ================= -->
+  <section class="view" id="view-collection">
+    <div class="toolbar">
+      <h2 class="view-title"><span id="collection-count">0</span> cards in your binder</h2>
+      <button class="btn btn-holo" id="btn-add-card">+ Add card</button>
+    </div>
+    <div class="collection-grid" id="collection-grid"></div>
+    <div class="empty-state hidden" id="collection-empty">
+      <div class="empty-orb">✨</div>
+      <p>Your binder is empty.</p>
+      <p class="muted">Add your first card, or pick a Pokémon in the dex and hit “Add as card”.</p>
+    </div>
+  </section>
+
+  <!-- ================= MARKET VIEW ================= -->
+  <section class="view" id="view-market">
+    <div class="toolbar">
+      <select id="market-card-select" class="input"></select>
+      <button class="btn" id="btn-link-tcg">🔗 Link TCG card</button>
+      <button class="btn btn-holo" id="btn-refresh-price">↻ Fetch market price</button>
+    </div>
+
+    <div class="market-layout" id="market-body">
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <h3>Price history</h3>
+          <div class="chart-meta">
+            <span id="chart-current">—</span>
+            <span id="chart-change" class="muted">—</span>
+          </div>
+        </div>
+        <canvas id="price-chart"></canvas>
+        <div class="tcg-link-info muted" id="tcg-link-info">Not linked to a TCG card yet.</div>
+      </div>
+
+      <div class="panel log-panel">
+        <div class="panel-head"><h3>Price log</h3></div>
+        <form class="price-form" id="manual-price-form">
+          <input type="date" id="price-date" class="input">
+          <input type="number" id="price-value" class="input" step="0.01" min="0" placeholder="Price $" required>
+          <button class="btn btn-holo" type="submit">Log</button>
+        </form>
+        <div class="price-log" id="price-log"></div>
+      </div>
+    </div>
+
+    <div class="empty-state hidden" id="market-empty">
+      <div class="empty-orb">📈</div>
+      <p>No cards to track yet.</p>
+      <p class="muted">Add cards to your collection first — then watch their value move.</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- ================= DETAIL DRAWER ================= -->
+<aside class="drawer" id="detail-drawer">
+  <button class="drawer-close" id="drawer-close">✕</button>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<!-- ================= CARD FORM MODAL ================= -->
+<div class="modal-backdrop hidden" id="card-form-overlay">
+  <form class="modal" id="card-form">
+    <h3 id="card-form-title">Add card</h3>
+    <label>Card name<input type="text" id="cf-name" class="input" required maxlength="60"></label>
+    <label>Set
+      <span class="autocomplete">
+        <input type="text" id="cf-set" class="input" maxlength="60" placeholder="Start typing a set name…" autocomplete="off">
+        <div class="ac-list hidden" id="cf-set-ac"></div>
+      </span>
+    </label>
+    <div class="form-row">
+      <label>Card #<input type="text" id="cf-number" class="input" maxlength="14"></label>
+      <label>Rarity
+        <select id="cf-rarity" class="input">
+          <option>Common</option><option>Uncommon</option><option>Rare</option>
+          <option>Holo Rare</option><option>Ultra Rare</option><option>Secret Rare</option>
+          <option>Promo</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-row">
+      <label>Condition
+        <select id="cf-condition" class="input">
+          <option>Mint</option><option>Near Mint</option><option>Excellent</option>
+          <option>Good</option><option>Played</option><option>Damaged</option>
+        </select>
+      </label>
+      <label>Price paid $<input type="number" id="cf-paid" class="input" step="0.01" min="0"></label>
+    </div>
+    <label>Pokédex # <span class="muted">(for the sprite)</span><input type="number" id="cf-dexnum" class="input" min="1" max="1025"></label>
+    <div class="form-buttons">
+      <button class="btn" type="button" id="cf-cancel">Cancel</button>
+      <button class="btn btn-holo" type="submit">Save card</button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= TCG SEARCH MODAL ================= -->
+<div class="modal-backdrop hidden" id="tcg-overlay">
+  <div class="modal">
+    <h3>Link a TCG card</h3>
+    <p class="muted small">Search the Pokémon TCG database and link a printing to pull live market prices.</p>
+    <form id="tcg-search-form" class="price-form">
+      <input type="text" id="tcg-query" class="input" placeholder="Card name, e.g. Charizard" autocomplete="off">
+      <button class="btn btn-holo" type="submit">Search</button>
+    </form>
+    <div class="tcg-results" id="tcg-results"></div>
+    <div class="form-buttons">
+      <button class="btn" type="button" id="tcg-cancel">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
