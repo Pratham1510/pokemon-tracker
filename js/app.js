@@ -94,8 +94,8 @@ function buildDexGrid() {
     cell.className = 'dex-cell';
     cell.dataset.num = n;
     cell.innerHTML = `
-      <img loading="lazy" alt="" src="${shinySprite(n)}"
-           onerror="this.onerror=null;this.src='${normalSprite(n)}'">
+      <img loading="lazy" alt="" src="${normalSprite(n)}"
+           onerror="this.onerror=null;this.src='${shinySprite(n)}'">
       <span class="dex-name">${nameOf(n)}</span>
       <span class="dex-num">#${String(n).padStart(4, '0')}</span>`;
     cell.addEventListener('click', () => {
