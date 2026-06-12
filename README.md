@@ -36,6 +36,8 @@ backend. Clearing site data resets the tracker.
 
 - Sprites/artwork: [PokéAPI sprites](https://github.com/PokeAPI/sprites) (CDN via raw.githubusercontent.com)
 - Names/types: [PokéAPI](https://pokeapi.co) (cached after first load)
-- Market prices: [pokemontcg.io](https://pokemontcg.io) v2 API (no key needed
-  at low request volume; add an `X-Api-Key` header in `js/app.js` if you hit
-  rate limits)
+- Market prices: [pokemontcg.io](https://pokemontcg.io) v2 API. The API can be
+  slow or rate-limited for anonymous traffic, so every request has a 12s
+  timeout and automatic retries. For faster, more reliable data, grab a free
+  key at [dev.pokemontcg.io](https://dev.pokemontcg.io) and set it via the ⚙
+  button in the Market tab (stored in localStorage).

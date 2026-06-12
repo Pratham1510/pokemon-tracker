@@ -13,6 +13,7 @@ const KEYS = {
   collection: 'shiny.collection.v1',
   names: 'shiny.names.v1',
   sets: 'shiny.sets.v1',
+  apiKey: 'shiny.tcgApiKey.v1',
 };
 
 const state = {
@@ -317,8 +318,7 @@ function loadSets() {
   if (cached) {
     try { tcgSets = JSON.parse(cached); return Promise.resolve(); } catch { /* refetch */ }
   }
-  setsLoading = fetch(`${TCG_API}/sets?pageSize=250&select=name,series,releaseDate&orderBy=-releaseDate`)
-    .then(r => r.json())
+  setsLoading = tcgFetch('/sets?pageSize=250&select=name,series,releaseDate&orderBy=-releaseDate')
     .then(d => {
       tcgSets = (d.data || []).map(s => ({ name: s.name, series: s.series, releaseDate: s.releaseDate }));
       localStorage.setItem(KEYS.sets, JSON.stringify(tcgSets));
@@ -626,6 +626,35 @@ function drawChart(card) {
 
 /* ---------------- TCG API ---------------- */
 
+// api.pokemontcg.io is flaky: requests sometimes hang for minutes or get
+// rate-limited. Every call goes through this helper — hard timeout, retries
+// with backoff, and an optional API key for better rate limits.
+async function tcgFetch(path, { retries = 2, timeoutMs = 12000, onRetry } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const headers = {};
+      const key = localStorage.getItem(KEYS.apiKey);
+      if (key) headers['X-Api-Key'] = key;
+      const res = await fetch(`${TCG_API}${path}`, { headers, signal: ctrl.signal });
+      if (res.status === 429) throw new Error('rate limited — add an API key via ⚙ or wait a minute');
+      if (!res.ok) throw new Error(`TCG API error ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      lastErr = err.name === 'AbortError' ? new Error('TCG API timed out') : err;
+      if (attempt < retries) {
+        onRetry?.(attempt + 1, retries);
+        await new Promise(r => setTimeout(r, 900 * (attempt + 1)));
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
 function tcgMarketPrice(tcgCard) {
   const prices = tcgCard?.tcgplayer?.prices;
   if (!prices) return null;
@@ -638,11 +667,10 @@ function tcgMarketPrice(tcgCard) {
   return first ? (first.market || first.mid || null) : null;
 }
 
-async function tcgSearch(query) {
-  const url = `${TCG_API}/cards?q=name:"${encodeURIComponent(query)}"&pageSize=14&orderBy=-set.releaseDate`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`TCG API ${res.status}`);
-  const data = await res.json();
+async function tcgSearch(query, onRetry) {
+  const data = await tcgFetch(
+    `/cards?q=name:"${encodeURIComponent(query)}"&pageSize=14&orderBy=-set.releaseDate`,
+    { onRetry });
   return data.data || [];
 }
 
@@ -662,7 +690,9 @@ async function runTcgSearch(e) {
   const results = $('#tcg-results');
   results.innerHTML = '<div class="tcg-status">Searching the TCG database…</div>';
   try {
-    const cards = await tcgSearch(q);
+    const cards = await tcgSearch(q, (attempt, max) => {
+      results.innerHTML = `<div class="tcg-status">TCG API is slow right now — retrying (${attempt}/${max})…</div>`;
+    });
     if (!cards.length) {
       results.innerHTML = '<div class="tcg-status">No cards found. Try a different name.</div>';
       return;
@@ -683,7 +713,8 @@ async function runTcgSearch(e) {
       results.appendChild(row);
     }
   } catch (err) {
-    results.innerHTML = `<div class="tcg-status">Search failed (${esc(err.message)}). The TCG API may be rate-limiting — try again in a minute.</div>`;
+    results.innerHTML = `<div class="tcg-status">Search failed: ${esc(err.message)}.<br>
+      The TCG API has flaky days — try again shortly, or add a free API key from pokemontcg.io via the ⚙ button for priority access.</div>`;
   }
 }
 
@@ -717,9 +748,9 @@ async function refreshPrice() {
   btn.disabled = true;
   btn.textContent = '↻ Fetching…';
   try {
-    const res = await fetch(`${TCG_API}/cards/${card.tcgId}`);
-    if (!res.ok) throw new Error(`TCG API ${res.status}`);
-    const { data } = await res.json();
+    const { data } = await tcgFetch(`/cards/${card.tcgId}`, {
+      onRetry: (attempt, max) => { btn.textContent = `↻ Retrying (${attempt}/${max})…`; },
+    });
     const price = tcgMarketPrice(data);
     if (price == null) throw new Error('no market price on this printing');
     // replace today's tcg entry if one exists, else append
@@ -799,6 +830,21 @@ function wireEvents() {
   });
   $('#btn-link-tcg').addEventListener('click', openTcgModal);
   $('#btn-refresh-price').addEventListener('click', refreshPrice);
+  $('#btn-api-key').addEventListener('click', () => {
+    const current = localStorage.getItem(KEYS.apiKey) || '';
+    const key = prompt(
+      'Optional: paste a free pokemontcg.io API key for faster, more reliable market data.\n' +
+      'Get one at https://dev.pokemontcg.io — leave empty to remove.',
+      current);
+    if (key === null) return; // cancelled
+    if (key.trim()) {
+      localStorage.setItem(KEYS.apiKey, key.trim());
+      toast('API key saved — market requests now use it.');
+    } else {
+      localStorage.removeItem(KEYS.apiKey);
+      toast('API key removed.');
+    }
+  });
   $('#tcg-search-form').addEventListener('submit', runTcgSearch);
   $('#tcg-cancel').addEventListener('click', () => $('#tcg-overlay').classList.add('hidden'));
   $('#tcg-overlay').addEventListener('click', (e) => {
