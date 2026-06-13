@@ -997,8 +997,11 @@ function openValueChart() {
     if (m != null) totalMarket += m;
     if (p != null) totalPaid += p;
   }
-  const hasData = cards.some(c => currentPrice(c) != null || (c.paid != null && c.paid !== ''));
+  const hasData = cards.length > 0;
   $('#value-empty').classList.toggle('hidden', hasData);
+  $('#value-summary').classList.toggle('hidden', !hasData);
+  $('#value-table-wrap').classList.toggle('hidden', !hasData);
+  if (!hasData) return;
 
   const diff = totalMarket - totalPaid;
   const pct = totalPaid > 0 ? (diff / totalPaid) * 100 : null;
@@ -1011,87 +1014,24 @@ function openValueChart() {
       ${pct != null ? `<div class="vs-sub ${cls}">${diff >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%</div>` : ''}
     </div>`;
 
-  drawValueChart();
-}
-
-function drawValueChart() {
-  const all = state.collection.map(c => ({
-    name: c.name,
-    paid: (c.paid != null && c.paid !== '') ? Number(c.paid) : null,
-    market: currentPrice(c),
-  }));
-  const pts = all.filter(d => d.paid != null && d.market != null);
-  const excluded = all.length - pts.length;
-
-  $('#value-note').textContent = excluded > 0
-    ? `${excluded} card${excluded > 1 ? 's' : ''} not plotted (need both a paid price and a market value).`
-    : '';
-
-  const canvas = $('#value-chart');
-  const wrap = canvas.parentElement;
-  const dpr = window.devicePixelRatio || 1;
-  const w = wrap.clientWidth || 640;
-  const h = 340;
-  canvas.style.width = '100%';
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-  if (!pts.length) return;
-
-  const pad = { l: 58, r: 18, t: 16, b: 42 };
-  const max = (Math.max(...pts.map(d => Math.max(d.paid, d.market))) || 1) * 1.1;
-  const X = (v) => pad.l + (v / max) * (w - pad.l - pad.r);
-  const Y = (v) => h - pad.b - (v / max) * (h - pad.t - pad.b);
-
-  // gridlines + axis labels (both axes share the same scale)
-  ctx.font = '10px JetBrains Mono, monospace';
-  ctx.lineWidth = 1;
-  for (let g = 0; g <= 4; g++) {
-    const val = (max * g) / 4;
-    const y = Y(val);
-    ctx.strokeStyle = 'rgba(126,138,200,.13)';
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
-    ctx.fillStyle = 'rgba(138,147,184,.85)'; ctx.textAlign = 'right';
-    ctx.fillText('A$' + val.toFixed(0), pad.l - 6, y + 3);
-    const x = X(val);
-    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
-    ctx.textAlign = 'center';
-    ctx.fillText('A$' + val.toFixed(0), x, h - pad.b + 15);
-  }
-
-  // axis titles
-  ctx.fillStyle = 'rgba(180,188,214,.9)';
-  ctx.font = '11px Outfit, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('Paid →', (pad.l + w - pad.r) / 2, h - 4);
-  ctx.save();
-  ctx.translate(13, (pad.t + h - pad.b) / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('Market →', 0, 0);
-  ctx.restore();
-
-  // break-even diagonal (market = paid)
-  ctx.strokeStyle = 'rgba(154,166,214,.55)';
-  ctx.setLineDash([5, 5]); ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(max), Y(max)); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // points: above the line = gain (green), below = loss (red)
-  pts.forEach(d => {
-    const x = X(d.paid), y = Y(d.market);
-    const up = d.market >= d.paid;
-    ctx.beginPath(); ctx.arc(x, y, 5.5, 0, Math.PI * 2);
-    ctx.fillStyle = up ? '#4cd17e' : '#ff6b81';
-    ctx.fill();
-    ctx.strokeStyle = '#0a0c16'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = 'rgba(204,210,232,.92)'; ctx.font = '10px Outfit, sans-serif';
-    let nm = d.name || '';
-    if (nm.length > 16) nm = nm.slice(0, 15) + '…';
-    if (x > w - pad.r - 90) { ctx.textAlign = 'right'; ctx.fillText(nm, x - 9, y + 3); }
-    else { ctx.textAlign = 'left'; ctx.fillText(nm, x + 9, y + 3); }
-  });
+  // per-card breakdown, sorted by current market value
+  const dash = '<span class="vt-muted">—</span>';
+  const rows = [...cards].sort((a, b) => (currentPrice(b) ?? 0) - (currentPrice(a) ?? 0));
+  $('#value-tbody').innerHTML = rows.map(c => {
+    const m = currentPrice(c);
+    const p = (c.paid != null && c.paid !== '') ? Number(c.paid) : null;
+    let change = dash;
+    if (m != null && p != null && p > 0) {
+      const d = m - p, pc = (d / p) * 100, k = d >= 0 ? 'up' : 'down';
+      change = `<span class="vt-change ${k}">${d >= 0 ? '+' : '−'}${fmt$(Math.abs(d))}<br><small>${d >= 0 ? '▲' : '▼'}${Math.abs(pc).toFixed(1)}%</small></span>`;
+    }
+    return `<tr>
+      <td><div class="vt-name">${esc(c.name)}</div>${c.set ? `<div class="vt-set">${esc(c.set)}</div>` : ''}</td>
+      <td class="num">${p != null ? fmt$(p) : dash}</td>
+      <td class="num">${m != null ? fmt$(m) : dash}</td>
+      <td class="num">${change}</td>
+    </tr>`;
+  }).join('');
 }
 
 function switchView(view) {
@@ -1257,7 +1197,6 @@ function wireEvents() {
       const card = selectedCard();
       if (card) drawChart(card);
     }
-    if (!$('#value-overlay').classList.contains('hidden')) drawValueChart();
   });
 }
 

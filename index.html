@@ -211,13 +211,17 @@
     <button class="drawer-close" id="value-close">✕</button>
     <h3>Collection value — paid vs market</h3>
     <div class="value-summary" id="value-summary"></div>
-    <div class="value-chart-wrap"><canvas id="value-chart"></canvas></div>
-    <div class="value-legend">
-      <span><i class="lg lg-up"></i> Above line — gain</span>
-      <span><i class="lg lg-down"></i> Below line — loss</span>
-      <span><i class="lg lg-line"></i> Break-even</span>
+    <div class="value-table-wrap" id="value-table-wrap">
+      <table class="value-table">
+        <thead><tr>
+          <th>Card</th>
+          <th class="num">Paid</th>
+          <th class="num">Market</th>
+          <th class="num">Change</th>
+        </tr></thead>
+        <tbody id="value-tbody"></tbody>
+      </table>
     </div>
-    <div class="value-note muted small" id="value-note"></div>
     <div class="value-empty hidden" id="value-empty">No cards in your collection yet — add some to see the breakdown.</div>
   </div>
 </div>
