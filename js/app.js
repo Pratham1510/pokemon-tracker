@@ -856,9 +856,13 @@ function marketValueAud(tcgCard) {
   return null;
 }
 
-async function tcgSearch(query, onRetry) {
+async function tcgSearch(query, filter, onRetry) {
+  const clean = (s) => String(s || '').replace(/"/g, '').trim();
+  let q = `name:"${clean(query)}"`;
+  const f = clean(filter);
+  if (f) q += ` (set.name:"*${f}*" OR set.id:"${f}" OR number:"${f}")`;
   const data = await tcgFetch(
-    `/cards?q=name:"${encodeURIComponent(query)}"&pageSize=14&orderBy=-set.releaseDate` +
+    `/cards?q=${encodeURIComponent(q)}&pageSize=60&orderBy=-set.releaseDate` +
     `&select=id,name,number,rarity,set,images,tcgplayer,cardmarket`,
     { onRetry });
   return data.data || [];
@@ -869,6 +873,7 @@ function openTcgModal() {
   if (!card) return;
   $('#tcg-overlay').classList.remove('hidden');
   $('#tcg-query').value = card.name;
+  $('#tcg-set').value = card.set || card.number || '';
   $('#tcg-results').innerHTML = '<div class="tcg-status">Search for a card to link.</div>';
   $('#tcg-query').focus();
 }
@@ -876,15 +881,21 @@ function openTcgModal() {
 async function runTcgSearch(e) {
   e.preventDefault();
   const q = $('#tcg-query').value.trim();
+  const filter = $('#tcg-set').value.trim();
   if (!q) return;
   const results = $('#tcg-results');
   results.innerHTML = '<div class="tcg-status">Searching the TCG database…</div>';
   try {
-    const cards = await tcgSearch(q, (attempt, max) => {
+    let cards = await tcgSearch(q, filter, (attempt, max) => {
       results.innerHTML = `<div class="tcg-status">TCG API is slow right now — retrying (${attempt}/${max})…</div>`;
     });
+    // if a set/number filter returned nothing, retry on name alone so the user still sees options
+    if (!cards.length && filter) {
+      results.innerHTML = '<div class="tcg-status">No match for that set/number — showing all printings…</div>';
+      cards = await tcgSearch(q, '');
+    }
     if (!cards.length) {
-      results.innerHTML = '<div class="tcg-status">No cards found. Try a different name.</div>';
+      results.innerHTML = '<div class="tcg-status">No cards found. Check the spelling, or try just the name.</div>';
       return;
     }
     results.innerHTML = '';

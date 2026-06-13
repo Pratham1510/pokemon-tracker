@@ -169,9 +169,10 @@
 <div class="modal-backdrop hidden" id="tcg-overlay">
   <div class="modal">
     <h3>Link a TCG card</h3>
-    <p class="muted small">Search the Pokémon TCG database and link a printing to pull live market prices.</p>
-    <form id="tcg-search-form" class="price-form">
+    <p class="muted small">Search the Pokémon TCG database and link a printing to pull live market prices. Popular Pokémon have hundreds of cards — add a set or card number to narrow it down.</p>
+    <form id="tcg-search-form" class="tcg-search">
       <input type="text" id="tcg-query" class="input" placeholder="Card name, e.g. Charizard" autocomplete="off">
+      <input type="text" id="tcg-set" class="input" placeholder="Set or card # (optional), e.g. 151 or 199" autocomplete="off">
       <button class="btn btn-holo" type="submit">Search</button>
     </form>
     <div class="tcg-results" id="tcg-results"></div>
