@@ -31,10 +31,10 @@
       <span class="stat-value" id="stat-caught">0 / 1025</span>
       <div class="stat-bar"><div class="stat-bar-fill" id="stat-bar-fill"></div></div>
     </div>
-    <div class="stat-pill">
-      <span class="stat-label">Collection value</span>
+    <button class="stat-pill clickable" id="btn-value-chart" title="See paid vs market breakdown">
+      <span class="stat-label">Collection value <span class="stat-chart-icon">📈</span></span>
       <span class="stat-value holo-text" id="stat-value">$0.00</span>
-    </div>
+    </button>
   </div>
 
   <div class="account" id="account">
@@ -202,6 +202,22 @@
     <div class="form-buttons">
       <button class="btn" type="button" id="signin-cancel">Maybe later</button>
     </div>
+  </div>
+</div>
+
+<!-- ================= COLLECTION VALUE MODAL ================= -->
+<div class="modal-backdrop hidden" id="value-overlay">
+  <div class="modal value-modal">
+    <button class="drawer-close" id="value-close">✕</button>
+    <h3>Collection value — paid vs market</h3>
+    <div class="value-summary" id="value-summary"></div>
+    <div class="value-chart-wrap"><canvas id="value-chart"></canvas></div>
+    <div class="value-legend">
+      <span><i class="lg lg-paid"></i> Paid</span>
+      <span><i class="lg lg-up"></i> Market (gain)</span>
+      <span><i class="lg lg-down"></i> Market (loss)</span>
+    </div>
+    <div class="value-empty hidden" id="value-empty">No cards in your collection yet — add some to see the breakdown.</div>
   </div>
 </div>
 

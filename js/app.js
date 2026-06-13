@@ -984,6 +984,115 @@ function updateHeaderStats() {
   $('#stat-value').textContent = fmt$(total);
 }
 
+/* ---------------- collection value: paid vs market ---------------- */
+
+function openValueChart() {
+  const cards = state.collection;
+  $('#value-overlay').classList.remove('hidden');
+
+  let totalPaid = 0, totalMarket = 0;
+  for (const c of cards) {
+    const m = currentPrice(c);
+    const p = (c.paid != null && c.paid !== '') ? Number(c.paid) : null;
+    if (m != null) totalMarket += m;
+    if (p != null) totalPaid += p;
+  }
+  const hasData = cards.some(c => currentPrice(c) != null || (c.paid != null && c.paid !== ''));
+  $('#value-empty').classList.toggle('hidden', hasData);
+
+  const diff = totalMarket - totalPaid;
+  const pct = totalPaid > 0 ? (diff / totalPaid) * 100 : null;
+  const cls = diff >= 0 ? 'up' : 'down';
+  $('#value-summary').innerHTML = `
+    <div class="vsum"><div class="vs-label">Total paid</div><div class="vs-val">${fmt$(totalPaid)}</div></div>
+    <div class="vsum"><div class="vs-label">Market value</div><div class="vs-val holo-text">${fmt$(totalMarket)}</div></div>
+    <div class="vsum"><div class="vs-label">Profit / loss</div>
+      <div class="vs-val ${cls}">${diff >= 0 ? '+' : '−'}${fmt$(Math.abs(diff))}</div>
+      ${pct != null ? `<div class="vs-sub ${cls}">${diff >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%</div>` : ''}
+    </div>`;
+
+  drawValueChart();
+}
+
+function drawValueChart() {
+  const list = state.collection
+    .map(c => ({
+      name: c.name,
+      paid: (c.paid != null && c.paid !== '') ? Number(c.paid) : null,
+      market: currentPrice(c),
+    }))
+    .filter(d => d.paid != null || d.market != null)
+    .sort((a, b) => (b.market ?? 0) - (a.market ?? 0));
+
+  const canvas = $('#value-chart');
+  const wrap = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  const h = 290;
+  const groupW = 64;
+  const cssW = Math.max(wrap.clientWidth || 600, list.length * groupW + 64);
+  canvas.style.width = cssW + 'px';
+  canvas.width = cssW * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, cssW, h);
+  if (!list.length) return;
+
+  const pad = { l: 52, r: 14, t: 16, b: 58 };
+  const maxV = Math.max(1, ...list.map(d => Math.max(d.paid ?? 0, d.market ?? 0)));
+  const max = maxV * 1.12;
+  const base = h - pad.b;
+  const Y = (v) => pad.t + (1 - v / max) * (h - pad.t - pad.b);
+
+  // gridlines + $ labels
+  ctx.strokeStyle = 'rgba(126,138,200,.15)';
+  ctx.fillStyle = 'rgba(138,147,184,.85)';
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  ctx.lineWidth = 1;
+  for (let g = 0; g <= 4; g++) {
+    const val = (max * g) / 4;
+    const y = Y(val);
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(cssW - pad.r, y);
+    ctx.stroke();
+    ctx.fillText('A$' + val.toFixed(val >= 100 ? 0 : 1), pad.l - 6, y + 3);
+  }
+
+  const plotW = cssW - pad.l - pad.r;
+  const gw = plotW / list.length;
+  const barW = Math.min(20, gw * 0.32);
+
+  list.forEach((d, i) => {
+    const cx = pad.l + gw * (i + 0.5);
+    // paid bar (left, neutral)
+    if (d.paid != null) {
+      const y = Y(d.paid);
+      ctx.fillStyle = '#7c89b3';
+      ctx.fillRect(cx - barW - 2, y, barW, base - y);
+    }
+    // market bar (right, green/red vs paid)
+    if (d.market != null) {
+      const up = d.paid == null || d.market >= d.paid;
+      ctx.fillStyle = d.paid == null ? '#8b7bff' : (up ? '#4cd17e' : '#ff6b81');
+      const y = Y(d.market);
+      ctx.fillRect(cx + 2, y, barW, base - y);
+    }
+    // rotated card-name label
+    ctx.save();
+    ctx.translate(cx, base + 8);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = 'rgba(180,188,214,.85)';
+    ctx.font = '10px Outfit, sans-serif';
+    ctx.textAlign = 'right';
+    let nm = d.name || '';
+    if (nm.length > 14) nm = nm.slice(0, 13) + '…';
+    ctx.fillText(nm, 0, 0);
+    ctx.restore();
+  });
+}
+
 function switchView(view) {
   state.view = view;
   document.querySelectorAll('.nav-tab').forEach(t =>
@@ -1066,6 +1175,13 @@ function wireEvents() {
   });
   $('#btn-signout').addEventListener('click', () => supa?.auth.signOut());
 
+  // collection value chart
+  $('#btn-value-chart').addEventListener('click', openValueChart);
+  $('#value-close').addEventListener('click', () => $('#value-overlay').classList.add('hidden'));
+  $('#value-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+  });
+
   // sign-in: password log in / sign up, with magic link as a fallback
   const setStatus = (msg, kind) => {
     const s = $('#signin-status');
@@ -1131,6 +1247,7 @@ function wireEvents() {
       closeCardForm();
       $('#tcg-overlay').classList.add('hidden');
       $('#signin-overlay').classList.add('hidden');
+      $('#value-overlay').classList.add('hidden');
     }
   });
 
@@ -1139,6 +1256,7 @@ function wireEvents() {
       const card = selectedCard();
       if (card) drawChart(card);
     }
+    if (!$('#value-overlay').classList.contains('hidden')) drawValueChart();
   });
 }
 

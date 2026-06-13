@@ -159,6 +159,30 @@ body {
 .signin-divider::before, .signin-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .signin-magic { width: 100%; }
 .tcg-search { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+
+/* clickable header stat */
+button.stat-pill { font-family: inherit; text-align: left; cursor: pointer; }
+.stat-pill.clickable { transition: border-color .15s, background .15s; }
+.stat-pill.clickable:hover { border-color: var(--border-bright); background: rgba(255,255,255,.08); }
+.stat-chart-icon { font-size: 11px; opacity: .8; }
+
+/* collection value modal */
+.value-modal { position: relative; max-width: 760px; text-align: left; align-items: stretch; }
+.value-summary { display: flex; gap: 12px; }
+.vsum { flex: 1; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.vsum .vs-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-dim); }
+.vsum .vs-val { font-family: var(--font-mono); font-size: 21px; font-weight: 700; margin-top: 4px; }
+.vsum .vs-sub { font-family: var(--font-mono); font-size: 12.5px; margin-top: 2px; }
+.vs-val.up, .vs-sub.up { color: var(--green); }
+.vs-val.down, .vs-sub.down { color: var(--red); }
+.value-chart-wrap { overflow-x: auto; margin-top: 4px; }
+#value-chart { height: 290px; display: block; }
+.value-legend { display: flex; gap: 18px; font-size: 12.5px; color: var(--ink-dim); }
+.value-legend i.lg { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+.lg-paid { background: #7c89b3; }
+.lg-up { background: var(--green); }
+.lg-down { background: var(--red); }
+.value-empty { text-align: center; color: var(--ink-dim); padding: 30px 10px; }
 .signin-orb {
   font-size: 40px;
   filter: drop-shadow(0 0 18px rgba(139,123,255,.6));
