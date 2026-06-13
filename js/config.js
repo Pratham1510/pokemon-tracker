@@ -7,5 +7,5 @@
    Leave them empty to run the app in local-only mode (localStorage).
    ============================================================ */
 
-window.SHINY_SUPABASE_URL = '';
-window.SHINY_SUPABASE_ANON_KEY = '';
+window.SHINY_SUPABASE_URL = 'https://pfkvxskwswygyfvhqpcf.supabase.co';
+window.SHINY_SUPABASE_ANON_KEY = 'sb_publishable_UHppDta-9KDhCUyFdqm5zw_WQ8reQAB';
