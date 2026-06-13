@@ -64,8 +64,135 @@ function load() {
     state.names = JSON.parse(localStorage.getItem(KEYS.names) || '[]');
   } catch { /* corrupted storage — start fresh */ }
 }
-function saveCaught() { localStorage.setItem(KEYS.caught, JSON.stringify([...state.caught])); }
-function saveCollection() { localStorage.setItem(KEYS.collection, JSON.stringify(state.collection)); }
+function saveCaught() {
+  localStorage.setItem(KEYS.caught, JSON.stringify([...state.caught]));
+  cloudPush();
+}
+function saveCollection() {
+  localStorage.setItem(KEYS.collection, JSON.stringify(state.collection));
+  cloudPush();
+}
+
+/* ---------------- cloud sync (Supabase) ----------------
+   localStorage is always the local cache. When the user is signed in, the
+   same {caught, cards} payload is mirrored to a per-user row in Supabase so
+   their collection follows them across devices. Everything degrades to
+   local-only mode when Supabase isn't configured or the user is signed out. */
+
+let supa = null;        // Supabase client (null = local-only mode)
+let session = null;     // current auth session
+let pushTimer = null;
+let pulling = false;
+let syncedUserId = null;
+
+const cloudEnabled = () => !!supa;
+const loggedIn = () => !!session?.user;
+
+function initSupabase() {
+  const url = window.SHINY_SUPABASE_URL;
+  const key = window.SHINY_SUPABASE_ANON_KEY;
+  if (!url || !key || !window.supabase) return; // stay in local-only mode
+  supa = window.supabase.createClient(url, key);
+}
+
+function setSyncDot(cls) { // '', 'syncing', 'error'
+  const dot = $('#sync-dot');
+  if (!dot) return;
+  dot.className = 'sync-dot' + (cls ? ' ' + cls : '');
+  dot.title = cls === 'syncing' ? 'Syncing…' : cls === 'error' ? 'Sync error' : 'Synced';
+}
+
+function renderAuthUI() {
+  const signinBtn = $('#btn-signin');
+  const chip = $('#account-chip');
+  if (!cloudEnabled()) { signinBtn.classList.add('hidden'); chip.classList.add('hidden'); return; }
+  if (loggedIn()) {
+    signinBtn.classList.add('hidden');
+    chip.classList.remove('hidden');
+    $('#account-email').textContent = session.user.email;
+  } else {
+    signinBtn.classList.remove('hidden');
+    chip.classList.add('hidden');
+  }
+}
+
+function cloudPush() {
+  if (!loggedIn()) return;
+  setSyncDot('syncing');
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    try {
+      const { error } = await supa.from('collections').upsert({
+        user_id: session.user.id,
+        caught: [...state.caught],
+        cards: state.collection,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      setSyncDot('');
+    } catch (e) {
+      setSyncDot('error');
+      console.warn('cloud push failed:', e.message || e);
+    }
+  }, 700);
+}
+
+// On sign-in, union local + cloud so syncing never silently drops progress.
+async function cloudPullMerge() {
+  if (pulling || !loggedIn()) return;
+  if (syncedUserId === session.user.id) return; // already synced this session
+  pulling = true;
+  setSyncDot('syncing');
+  try {
+    const { data, error } = await supa.from('collections')
+      .select('caught,cards').eq('user_id', session.user.id).maybeSingle();
+    if (error) throw error;
+
+    // caught: union of dex numbers
+    state.caught = new Set([...((data && data.caught) || []), ...state.caught]);
+    // cards: union by id, cloud copy wins on conflict
+    const byId = new Map();
+    for (const c of state.collection) byId.set(c.id, c);
+    for (const c of ((data && data.cards) || [])) byId.set(c.id, c);
+    state.collection = [...byId.values()];
+
+    syncedUserId = session.user.id;
+    saveCaught();      // write local cache + schedule a push of the merged state
+    saveCollection();
+    refreshDexCells();
+    renderCollection();
+    renderMarket();
+    updateHeaderStats();
+    toast('☁ Collection synced.');
+  } catch (e) {
+    setSyncDot('error');
+    console.warn('cloud pull failed:', e.message || e);
+    toast('Sync failed — working locally for now.');
+  } finally {
+    pulling = false;
+  }
+}
+
+async function sendMagicLink(email) {
+  const { error } = await supa.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname },
+  });
+  if (error) throw error;
+}
+
+function wireAuth() {
+  renderAuthUI();
+  if (!cloudEnabled()) return;
+  supa.auth.onAuthStateChange((event, sess) => {
+    session = sess;
+    if (event === 'SIGNED_OUT') { syncedUserId = null; toast('Signed out.'); }
+    renderAuthUI();
+    if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && sess?.user) {
+      cloudPullMerge();
+    }
+  });
+}
 
 /* ---------------- sprite helpers ---------------- */
 
@@ -876,11 +1003,44 @@ function wireEvents() {
     if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
   });
 
+  // account / sync
+  $('#btn-signin').addEventListener('click', () => {
+    $('#signin-status').textContent = '';
+    $('#signin-status').className = 'signin-status';
+    $('#signin-overlay').classList.remove('hidden');
+    $('#signin-email').focus();
+  });
+  $('#signin-cancel').addEventListener('click', () => $('#signin-overlay').classList.add('hidden'));
+  $('#signin-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+  });
+  $('#btn-signout').addEventListener('click', () => supa?.auth.signOut());
+  $('#signin-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#signin-email').value.trim();
+    if (!email) return;
+    const btn = $('#signin-submit');
+    const status = $('#signin-status');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    status.className = 'signin-status'; status.textContent = '';
+    try {
+      await sendMagicLink(email);
+      status.className = 'signin-status ok';
+      status.textContent = '✓ Magic link sent — check your inbox!';
+    } catch (err) {
+      status.className = 'signin-status err';
+      status.textContent = 'Could not send link: ' + (err.message || err);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Send link';
+    }
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeDrawer();
       closeCardForm();
       $('#tcg-overlay').classList.add('hidden');
+      $('#signin-overlay').classList.add('hidden');
     }
   });
 
@@ -896,10 +1056,12 @@ function wireEvents() {
 
 function init() {
   load();
+  initSupabase();
   $('#price-date').value = todayISO();
   buildDexGrid();
   wireEvents();
   updateHeaderStats();
+  wireAuth();      // restores session + syncs if already signed in
   loadNames();
   loadFx();
 }

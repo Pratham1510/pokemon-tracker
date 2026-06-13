@@ -124,6 +124,45 @@ body {
 .stat-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); margin-top: 6px; overflow: hidden; }
 .stat-bar-fill { height: 100%; width: 0%; background: var(--holo-grad); transition: width .5s ease; }
 
+/* ============ ACCOUNT / SYNC ============ */
+
+.account { display: flex; align-items: center; }
+.account-signin { white-space: nowrap; }
+.account-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 8px 6px 14px;
+}
+.account-email { font-size: 13px; color: var(--ink); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  flex-shrink: 0;
+  transition: background .2s, box-shadow .2s;
+}
+.sync-dot.syncing { background: var(--holo-d); box-shadow: 0 0 8px var(--holo-d); animation: pulse 1s ease-in-out infinite; }
+.sync-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+@keyframes pulse { 50% { opacity: .35; } }
+
+.signin-modal { text-align: center; align-items: center; }
+.signin-modal .price-form { width: 100%; }
+.signin-modal .form-buttons { justify-content: center; }
+.signin-orb {
+  font-size: 40px;
+  filter: drop-shadow(0 0 18px rgba(139,123,255,.6));
+  margin-bottom: 4px;
+}
+.signin-modal p { margin: 0; }
+.signin-status { font-size: 13px; min-height: 18px; }
+.signin-status.ok { color: var(--green); }
+.signin-status.err { color: var(--red); }
+
 /* ============ MAIN / VIEWS ============ */
 
 .app-main { max-width: 1240px; margin: 0 auto; padding: 26px 28px 80px; }

@@ -36,6 +36,15 @@
       <span class="stat-value holo-text" id="stat-value">$0.00</span>
     </div>
   </div>
+
+  <div class="account" id="account">
+    <button class="btn account-signin" id="btn-signin">☁ Sign in to sync</button>
+    <div class="account-chip hidden" id="account-chip">
+      <span class="sync-dot" id="sync-dot" title="Synced"></span>
+      <span class="account-email" id="account-email"></span>
+      <button class="btn btn-sm account-signout" id="btn-signout">Sign out</button>
+    </div>
+  </div>
 </header>
 
 <main class="app-main">
@@ -172,8 +181,27 @@
   </div>
 </div>
 
+<!-- ================= SIGN-IN MODAL ================= -->
+<div class="modal-backdrop hidden" id="signin-overlay">
+  <div class="modal signin-modal">
+    <div class="signin-orb">☁</div>
+    <h3>Sync your collection</h3>
+    <p class="muted small">Sign in with your email and we'll send you a magic link — no password. Your shiny progress and cards then follow you to any device.</p>
+    <form id="signin-form" class="price-form">
+      <input type="email" id="signin-email" class="input" placeholder="you@email.com" autocomplete="email" required>
+      <button class="btn btn-holo" type="submit" id="signin-submit">Send link</button>
+    </form>
+    <div class="signin-status" id="signin-status"></div>
+    <div class="form-buttons">
+      <button class="btn" type="button" id="signin-cancel">Maybe later</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast hidden" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
