@@ -181,12 +181,24 @@ async function sendMagicLink(email) {
   if (error) throw error;
 }
 
+async function passwordSignIn(email, password) {
+  const { error } = await supa.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+}
+
+async function passwordSignUp(email, password) {
+  const { data, error } = await supa.auth.signUp({ email, password });
+  if (error) throw error;
+  return data; // data.session is set when email confirmation is disabled
+}
+
 function wireAuth() {
   renderAuthUI();
   if (!cloudEnabled()) return;
   supa.auth.onAuthStateChange((event, sess) => {
     session = sess;
     if (event === 'SIGNED_OUT') { syncedUserId = null; toast('Signed out.'); }
+    if (event === 'SIGNED_IN') $('#signin-overlay').classList.add('hidden');
     renderAuthUI();
     if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && sess?.user) {
       cloudPullMerge();
@@ -1015,24 +1027,64 @@ function wireEvents() {
     if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
   });
   $('#btn-signout').addEventListener('click', () => supa?.auth.signOut());
+
+  // sign-in: password log in / sign up, with magic link as a fallback
+  const setStatus = (msg, kind) => {
+    const s = $('#signin-status');
+    s.className = 'signin-status' + (kind ? ' ' + kind : '');
+    s.textContent = msg;
+  };
+  const authEmail = () => $('#signin-email').value.trim();
+  const authPass = () => $('#signin-password').value;
+  const busy = (on, btn, label) => { btn.disabled = on; if (on) btn.dataset.label = btn.textContent; btn.textContent = on ? label : btn.dataset.label; };
+
   $('#signin-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = $('#signin-email').value.trim();
-    if (!email) return;
-    const btn = $('#signin-submit');
-    const status = $('#signin-status');
-    btn.disabled = true; btn.textContent = 'Sending…';
-    status.className = 'signin-status'; status.textContent = '';
+    e.preventDefault(); // "Log in" = password sign-in
+    if (!authEmail()) return;
+    if (authPass().length < 6) { setStatus('Enter a password (min 6 characters), or use the magic link below.', 'err'); return; }
+    const btn = $('#btn-login');
+    busy(true, btn, 'Logging in…'); setStatus('');
     try {
-      await sendMagicLink(email);
-      status.className = 'signin-status ok';
-      status.textContent = '✓ Magic link sent — check your inbox!';
+      await passwordSignIn(authEmail(), authPass());
+      setStatus('✓ Logged in!', 'ok'); // modal closes via onAuthStateChange
     } catch (err) {
-      status.className = 'signin-status err';
-      status.textContent = 'Could not send link: ' + (err.message || err);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Send link';
-    }
+      const m = (err.message || '').toLowerCase();
+      setStatus(m.includes('invalid')
+        ? 'Wrong email or password — or hit "Create account" if you\'re new.'
+        : 'Login failed: ' + (err.message || err), 'err');
+    } finally { busy(false, btn); }
+  });
+
+  $('#btn-signup').addEventListener('click', async () => {
+    if (!authEmail()) { setStatus('Enter your email first.', 'err'); return; }
+    if (authPass().length < 6) { setStatus('Pick a password with at least 6 characters.', 'err'); return; }
+    const btn = $('#btn-signup');
+    busy(true, btn, 'Creating…'); setStatus('');
+    try {
+      const data = await passwordSignUp(authEmail(), authPass());
+      if (data.session) setStatus('✓ Account created — you\'re in!', 'ok'); // onAuthStateChange syncs + closes
+      else setStatus('Account created! Check your email to confirm, then log in. (Or disable email confirmation in Supabase to skip this.)', 'ok');
+    } catch (err) {
+      const m = (err.message || '').toLowerCase();
+      setStatus(m.includes('already')
+        ? 'That email already has an account — just log in.'
+        : 'Could not create account: ' + (err.message || err), 'err');
+    } finally { busy(false, btn); }
+  });
+
+  $('#btn-magic').addEventListener('click', async () => {
+    if (!authEmail()) { setStatus('Enter your email first.', 'err'); return; }
+    const btn = $('#btn-magic');
+    busy(true, btn, 'Sending…'); setStatus('');
+    try {
+      await sendMagicLink(authEmail());
+      setStatus('✓ Magic link sent — check your inbox!', 'ok');
+    } catch (err) {
+      const m = (err.message || '').toLowerCase();
+      setStatus(m.includes('rate') || m.includes('limit')
+        ? 'Email limit hit — wait a bit, or just use a password above.'
+        : 'Could not send link: ' + (err.message || err), 'err');
+    } finally { busy(false, btn); }
   });
 
   document.addEventListener('keydown', (e) => {

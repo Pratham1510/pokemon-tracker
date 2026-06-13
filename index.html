@@ -186,11 +186,17 @@
   <div class="modal signin-modal">
     <div class="signin-orb">☁</div>
     <h3>Sync your collection</h3>
-    <p class="muted small">Sign in with your email and we'll send you a magic link — no password. Your shiny progress and cards then follow you to any device.</p>
-    <form id="signin-form" class="price-form">
+    <p class="muted small">Log in or create an account to sync your shiny progress and cards across every device.</p>
+    <form id="signin-form" class="signin-fields">
       <input type="email" id="signin-email" class="input" placeholder="you@email.com" autocomplete="email" required>
-      <button class="btn btn-holo" type="submit" id="signin-submit">Send link</button>
+      <input type="password" id="signin-password" class="input" placeholder="Password (min 6 characters)" autocomplete="current-password" minlength="6">
+      <div class="signin-buttons">
+        <button class="btn btn-holo" type="submit" id="btn-login">Log in</button>
+        <button class="btn" type="button" id="btn-signup">Create account</button>
+      </div>
     </form>
+    <div class="signin-divider"><span>or</span></div>
+    <button class="btn signin-magic" type="button" id="btn-magic">✉ Email me a magic link instead</button>
     <div class="signin-status" id="signin-status"></div>
     <div class="form-buttons">
       <button class="btn" type="button" id="signin-cancel">Maybe later</button>
