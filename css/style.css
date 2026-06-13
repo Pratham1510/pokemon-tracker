@@ -182,6 +182,8 @@ button.stat-pill { font-family: inherit; text-align: left; cursor: pointer; }
 .lg-paid { background: #7c89b3; }
 .lg-up { background: var(--green); }
 .lg-down { background: var(--red); }
+.value-legend i.lg-line { width: 16px; height: 0; border-radius: 0; border-top: 2px dashed #9aa6d6; }
+.value-note { margin-top: 2px; }
 .value-empty { text-align: center; color: var(--ink-dim); padding: 30px 10px; }
 .signin-orb {
   font-size: 40px;
