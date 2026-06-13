@@ -496,6 +496,7 @@ select.input option { background: var(--panel-solid); }
   color: var(--holo-c);
 }
 .price-entry .p-src.manual { background: rgba(255,255,255,.05); border-color: var(--border); color: var(--ink-dim); }
+.price-entry .p-src.cardmarket { background: rgba(255,169,77,.14); border-color: rgba(255,169,77,.4); color: #ffbf80; }
 .price-entry .p-val { margin-left: auto; font-family: var(--font-mono); font-weight: 700; }
 .price-entry .p-del { background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 13px; padding: 2px 6px; }
 .price-entry .p-del:hover { color: var(--red); }

@@ -14,7 +14,7 @@ const KEYS = {
   names: 'shiny.names.v1',
   sets: 'shiny.sets.v1',
   apiKey: 'shiny.tcgApiKey.v1',
-  fx: 'shiny.fxAud.v1',
+  fx: 'shiny.fx.v2',
 };
 
 const state = {
@@ -32,27 +32,37 @@ const $ = (sel) => document.querySelector(sel);
 const fmt$ = (n) => 'A$' + Number(n).toFixed(2);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-/* ---------------- USD→AUD exchange rate ----------------
-   TCGplayer market prices are USD; everything in the app is shown and
-   stored in AUD. Live rate from frankfurter.app, cached for the day. */
+/* ---------------- exchange rates → AUD ----------------
+   Everything is shown and stored in AUD. TCGplayer prices are USD,
+   Cardmarket prices are EUR. Live rates from frankfurter.dev (one call,
+   base=EUR), cached for the day. */
 
-let fxRate = 1.55; // fallback if offline and nothing cached
-const usdToAud = (usd) => usd * fxRate;
+let fxUsdAud = 1.55; // fallbacks if offline and nothing cached
+let fxEurAud = 1.65;
+const usdToAud = (usd) => usd * fxUsdAud;
+const eurToAud = (eur) => eur * fxEurAud;
 
 async function loadFx() {
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(KEYS.fx) || 'null'); } catch { /* ignore */ }
-  if (cached?.rate) fxRate = cached.rate;
+  if (cached?.usd) fxUsdAud = cached.usd;
+  if (cached?.eur) fxEurAud = cached.eur;
   if (cached?.date === todayISO()) return;
   try {
-    const res = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD');
+    const res = await fetch('https://api.frankfurter.dev/v1/latest?base=EUR&symbols=AUD,USD');
     const d = await res.json();
-    if (d?.rates?.AUD) {
-      fxRate = d.rates.AUD;
-      localStorage.setItem(KEYS.fx, JSON.stringify({ rate: fxRate, date: todayISO() }));
+    if (d?.rates?.AUD && d?.rates?.USD) {
+      fxEurAud = d.rates.AUD;                 // EUR → AUD
+      fxUsdAud = d.rates.AUD / d.rates.USD;   // USD → AUD (via EUR)
+      localStorage.setItem(KEYS.fx, JSON.stringify({ usd: fxUsdAud, eur: fxEurAud, date: todayISO() }));
     }
-  } catch { /* keep cached/fallback rate */ }
+  } catch { /* keep cached/fallback rates */ }
 }
+
+// price-source presentation
+const SRC_LABEL = { tcg: 'TCG', cardmarket: 'CM', manual: 'manual' };
+const SRC_TITLE = { tcg: 'TCGplayer (US)', cardmarket: 'Cardmarket (EU)', manual: 'Manually logged' };
+const SRC_COLOR = { tcg: '#4adede', cardmarket: '#ffa94d', manual: '#ffe66d' };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /* ---------------- persistence ---------------- */
@@ -673,7 +683,7 @@ function renderMarket() {
     row.className = 'price-entry';
     row.innerHTML = `
       <span class="p-date">${entry.date}</span>
-      <span class="p-src ${entry.source}">${entry.source}</span>
+      <span class="p-src ${entry.source}" title="${SRC_TITLE[entry.source] || ''}">${SRC_LABEL[entry.source] || entry.source}</span>
       <span class="p-val">${fmt$(entry.price)}</span>
       <button class="p-del" title="Remove entry">✕</button>`;
     row.querySelector('.p-del').addEventListener('click', () => {
@@ -778,7 +788,7 @@ function drawChart(card) {
   pts.forEach((p, i) => {
     ctx.beginPath();
     ctx.arc(X(i), Y(p.price), 3.5, 0, Math.PI * 2);
-    ctx.fillStyle = p.source === 'tcg' ? '#4adede' : '#ffe66d';
+    ctx.fillStyle = SRC_COLOR[p.source] || '#ffe66d';
     ctx.fill();
     ctx.strokeStyle = '#0a0c16';
     ctx.lineWidth = 1.5;
@@ -818,7 +828,7 @@ async function tcgFetch(path, { retries = 3, timeoutMs = 18000, onRetry } = {}) 
   throw lastErr;
 }
 
-function tcgMarketPrice(tcgCard) {
+function tcgMarketPrice(tcgCard) { // returns USD or null
   const prices = tcgCard?.tcgplayer?.prices;
   if (!prices) return null;
   const variants = ['holofoil', 'normal', 'reverseHolofoil', '1stEditionHolofoil', '1stEditionNormal', 'unlimitedHolofoil'];
@@ -830,10 +840,26 @@ function tcgMarketPrice(tcgCard) {
   return first ? (first.market || first.mid || null) : null;
 }
 
+function cardmarketPrice(tcgCard) { // returns EUR or null
+  const p = tcgCard?.cardmarket?.prices;
+  if (!p) return null;
+  return p.trendPrice ?? p.averageSellPrice ?? p.avg7 ?? p.avg30 ?? null;
+}
+
+// Best available market value, already converted to AUD, plus which market
+// it came from. Prefers TCGplayer (US); falls back to Cardmarket (EU).
+function marketValueAud(tcgCard) {
+  const usd = tcgMarketPrice(tcgCard);
+  if (usd != null) return { aud: usdToAud(usd), source: 'tcg' };
+  const eur = cardmarketPrice(tcgCard);
+  if (eur != null) return { aud: eurToAud(eur), source: 'cardmarket' };
+  return null;
+}
+
 async function tcgSearch(query, onRetry) {
   const data = await tcgFetch(
     `/cards?q=name:"${encodeURIComponent(query)}"&pageSize=14&orderBy=-set.releaseDate` +
-    `&select=id,name,number,rarity,set,images,tcgplayer`,
+    `&select=id,name,number,rarity,set,images,tcgplayer,cardmarket`,
     { onRetry });
   return data.data || [];
 }
@@ -863,8 +889,7 @@ async function runTcgSearch(e) {
     }
     results.innerHTML = '';
     for (const tc of cards) {
-      const usd = tcgMarketPrice(tc);
-      const price = usd != null ? usdToAud(usd) : null;
+      const val = marketValueAud(tc); // { aud, source } or null
       const row = document.createElement('div');
       row.className = 'tcg-result';
       row.innerHTML = `
@@ -873,8 +898,8 @@ async function runTcgSearch(e) {
           <div class="t-name">${esc(tc.name)}</div>
           <div class="t-set">${esc(tc.set?.name || '')} · #${esc(tc.number || '?')} · ${esc(tc.rarity || 'Unknown rarity')}</div>
         </div>
-        <div class="t-price">${price != null ? fmt$(price) : 'no price'}</div>`;
-      row.addEventListener('click', () => linkTcgCard(tc, price));
+        <div class="t-price">${val ? fmt$(val.aud) + (val.source === 'cardmarket' ? ' · EU' : '') : 'no price'}</div>`;
+      row.addEventListener('click', () => linkTcgCard(tc, val));
       results.appendChild(row);
     }
   } catch (err) {
@@ -883,7 +908,7 @@ async function runTcgSearch(e) {
   }
 }
 
-function linkTcgCard(tc, price) {
+function linkTcgCard(tc, val) {
   const card = selectedCard();
   if (!card) return;
   card.tcgId = tc.id;
@@ -891,14 +916,14 @@ function linkTcgCard(tc, price) {
   card.tcgImage = tc.images?.small || null;
   if (!card.set && tc.set?.name) card.set = tc.set.name;
   if (!card.number && tc.number) card.number = tc.number;
-  if (price != null) {
-    card.priceHistory.push({ date: todayISO(), price, source: 'tcg' });
+  if (val) {
+    card.priceHistory.push({ date: todayISO(), price: val.aud, source: val.source });
   }
   saveCollection();
   $('#tcg-overlay').classList.add('hidden');
   renderMarket();
   renderCollection();
-  toast(`Linked to ${tc.name} (${tc.set?.name || 'TCG'})${price != null ? ' — price logged!' : ''}`);
+  toast(`Linked to ${tc.name} (${tc.set?.name || 'TCG'})${val ? ' — price logged!' : ' — no market price yet'}`);
 }
 
 async function refreshPrice() {
@@ -913,22 +938,22 @@ async function refreshPrice() {
   btn.disabled = true;
   btn.textContent = '↻ Fetching…';
   try {
-    const { data } = await tcgFetch(`/cards/${card.tcgId}?select=id,name,tcgplayer`, {
+    const { data } = await tcgFetch(`/cards/${card.tcgId}?select=id,name,tcgplayer,cardmarket`, {
       onRetry: (attempt, max) => { btn.textContent = `↻ Retrying (${attempt}/${max})…`; },
     });
-    const usd = tcgMarketPrice(data);
-    if (usd == null) throw new Error('no market price on this printing');
-    const price = usdToAud(usd);
-    // replace today's tcg entry if one exists, else append
+    const val = marketValueAud(data);
+    if (!val) throw new Error('no market price for this card yet (often too new)');
+    const price = val.aud;
+    // replace today's entry from the same market if one exists, else append
     const today = todayISO();
-    const existing = card.priceHistory.find(p => p.date === today && p.source === 'tcg');
+    const existing = card.priceHistory.find(p => p.date === today && p.source === val.source);
     if (existing) existing.price = price;
-    else card.priceHistory.push({ date: today, price, source: 'tcg' });
+    else card.priceHistory.push({ date: today, price, source: val.source });
     card.priceHistory.sort((a, b) => a.date.localeCompare(b.date));
     saveCollection();
     renderMarket();
     renderCollection();
-    toast(`Market price: ${fmt$(price)}`);
+    toast(`Market price: ${fmt$(price)} (${val.source === 'cardmarket' ? 'Cardmarket EU' : 'TCGplayer US'})`);
   } catch (err) {
     toast(`Fetch failed: ${err.message}`);
   } finally {
