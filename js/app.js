@@ -791,7 +791,7 @@ function drawChart(card) {
 // api.pokemontcg.io is flaky: requests sometimes hang for minutes or get
 // rate-limited. Every call goes through this helper — hard timeout, retries
 // with backoff, and an optional API key for better rate limits.
-async function tcgFetch(path, { retries = 2, timeoutMs = 12000, onRetry } = {}) {
+async function tcgFetch(path, { retries = 3, timeoutMs = 18000, onRetry } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
@@ -801,14 +801,15 @@ async function tcgFetch(path, { retries = 2, timeoutMs = 12000, onRetry } = {}) 
       const key = localStorage.getItem(KEYS.apiKey);
       if (key) headers['X-Api-Key'] = key;
       const res = await fetch(`${TCG_API}${path}`, { headers, signal: ctrl.signal });
-      if (res.status === 429) throw new Error('rate limited — add an API key via ⚙ or wait a minute');
+      if (res.status === 429) throw new Error('rate limited — add a free API key via ⚙ or wait a minute');
+      if (res.status >= 500) throw new Error(`TCG API server error ${res.status}`);
       if (!res.ok) throw new Error(`TCG API error ${res.status}`);
       return await res.json();
     } catch (err) {
       lastErr = err.name === 'AbortError' ? new Error('TCG API timed out') : err;
       if (attempt < retries) {
         onRetry?.(attempt + 1, retries);
-        await new Promise(r => setTimeout(r, 900 * (attempt + 1)));
+        await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
       }
     } finally {
       clearTimeout(timer);
@@ -831,7 +832,8 @@ function tcgMarketPrice(tcgCard) {
 
 async function tcgSearch(query, onRetry) {
   const data = await tcgFetch(
-    `/cards?q=name:"${encodeURIComponent(query)}"&pageSize=14&orderBy=-set.releaseDate`,
+    `/cards?q=name:"${encodeURIComponent(query)}"&pageSize=14&orderBy=-set.releaseDate` +
+    `&select=id,name,number,rarity,set,images,tcgplayer`,
     { onRetry });
   return data.data || [];
 }
@@ -911,7 +913,7 @@ async function refreshPrice() {
   btn.disabled = true;
   btn.textContent = '↻ Fetching…';
   try {
-    const { data } = await tcgFetch(`/cards/${card.tcgId}`, {
+    const { data } = await tcgFetch(`/cards/${card.tcgId}?select=id,name,tcgplayer`, {
       onRetry: (attempt, max) => { btn.textContent = `↻ Retrying (${attempt}/${max})…`; },
     });
     const usd = tcgMarketPrice(data);
