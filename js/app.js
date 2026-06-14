@@ -15,7 +15,10 @@ const KEYS = {
   sets: 'shiny.sets.v1',
   apiKey: 'shiny.tcgApiKey.v1',
   fx: 'shiny.fx.v2',
+  lastRefresh: 'shiny.lastRefresh.v1',
 };
+
+const AUTO_REFRESH_MS = 12 * 60 * 60 * 1000; // refresh linked-card prices every 12h
 
 const state = {
   names: [],                  // index 0 => pokemon #1
@@ -644,7 +647,10 @@ function renderMarket() {
   $('#market-card-select').classList.toggle('hidden', !hasCards);
   $('#btn-link-tcg').classList.toggle('hidden', !hasCards);
   $('#btn-refresh-price').classList.toggle('hidden', !hasCards);
+  $('#auto-note').classList.toggle('hidden', !hasCards);
   if (!hasCards) return;
+
+  updateAutoNote();
 
   const card = selectedCard();
   state.selectedCardId = card.id;
@@ -937,6 +943,20 @@ function linkTcgCard(tc, val) {
   toast(`Linked to ${tc.name} (${tc.set?.name || 'TCG'})${val ? ' — price logged!' : ' — no market price yet'}`);
 }
 
+// Fetch the current price for one linked card and log it (replacing today's
+// same-source entry if present). Shared by manual refresh and auto-refresh.
+async function fetchAndLogPrice(card, onRetry) {
+  const { data } = await tcgFetch(`/cards/${card.tcgId}?select=id,name,tcgplayer,cardmarket`, { onRetry });
+  const val = marketValueAud(data);
+  if (!val) throw new Error('no market price for this card yet (often too new)');
+  const today = todayISO();
+  const existing = card.priceHistory.find(p => p.date === today && p.source === val.source);
+  if (existing) existing.price = val.aud;
+  else card.priceHistory.push({ date: today, price: val.aud, source: val.source });
+  card.priceHistory.sort((a, b) => a.date.localeCompare(b.date));
+  return val;
+}
+
 async function refreshPrice() {
   const card = selectedCard();
   if (!card) return;
@@ -949,28 +969,64 @@ async function refreshPrice() {
   btn.disabled = true;
   btn.textContent = '↻ Fetching…';
   try {
-    const { data } = await tcgFetch(`/cards/${card.tcgId}?select=id,name,tcgplayer,cardmarket`, {
-      onRetry: (attempt, max) => { btn.textContent = `↻ Retrying (${attempt}/${max})…`; },
-    });
-    const val = marketValueAud(data);
-    if (!val) throw new Error('no market price for this card yet (often too new)');
-    const price = val.aud;
-    // replace today's entry from the same market if one exists, else append
-    const today = todayISO();
-    const existing = card.priceHistory.find(p => p.date === today && p.source === val.source);
-    if (existing) existing.price = price;
-    else card.priceHistory.push({ date: today, price, source: val.source });
-    card.priceHistory.sort((a, b) => a.date.localeCompare(b.date));
+    const val = await fetchAndLogPrice(card, (attempt, max) => { btn.textContent = `↻ Retrying (${attempt}/${max})…`; });
     saveCollection();
     renderMarket();
     renderCollection();
-    toast(`Market price: ${fmt$(price)} (${val.source === 'cardmarket' ? 'Cardmarket EU' : 'TCGplayer US'})`);
+    toast(`Market price: ${fmt$(val.aud)} (${val.source === 'cardmarket' ? 'Cardmarket EU' : 'TCGplayer US'})`);
   } catch (err) {
     toast(`Fetch failed: ${err.message}`);
   } finally {
     btn.disabled = false;
     btn.textContent = '↻ Fetch market price';
   }
+}
+
+/* ---------------- automatic 12-hour refresh ----------------
+   Static app, so this runs while the app is open: on load if 12h have
+   elapsed since the last run, plus an hourly check for long-lived tabs.
+   It cannot run while the app is closed (that would need a paid cron). */
+
+let autoRefreshing = false;
+
+async function autoRefreshPrices(force = false) {
+  if (autoRefreshing) return;
+  const linked = state.collection.filter(c => c.tcgId);
+  if (!linked.length) return;
+  const last = Number(localStorage.getItem(KEYS.lastRefresh) || 0);
+  if (!force && Date.now() - last < AUTO_REFRESH_MS) return;
+
+  autoRefreshing = true;
+  localStorage.setItem(KEYS.lastRefresh, String(Date.now())); // claim the slot up front
+  let ok = 0;
+  for (const card of linked) {
+    try { await fetchAndLogPrice(card); ok++; }
+    catch { /* skip cards with no price / transient errors */ }
+    await new Promise(r => setTimeout(r, 400)); // be gentle on the API
+  }
+  autoRefreshing = false;
+
+  if (ok) {
+    saveCollection();
+    updateHeaderStats();
+    renderCollection();
+    if (state.view === 'market') renderMarket();
+    toast(`🔄 Auto-updated prices for ${ok} card${ok > 1 ? 's' : ''}.`);
+  }
+  updateAutoNote();
+}
+
+function updateAutoNote() {
+  const el = $('#auto-note');
+  if (!el) return;
+  const last = Number(localStorage.getItem(KEYS.lastRefresh) || 0);
+  let txt = 'Market prices auto-update every 12 hours while the app is open.';
+  if (last) {
+    const mins = Math.round((Date.now() - last) / 60000);
+    const ago = mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)}h ago`;
+    txt += ` Last updated ${ago}.`;
+  }
+  el.textContent = txt;
 }
 
 /* ============================================================
@@ -1211,7 +1267,8 @@ function init() {
   updateHeaderStats();
   wireAuth();      // restores session + syncs if already signed in
   loadNames();
-  loadFx();
+  loadFx().then(() => autoRefreshPrices());  // refresh on load if 12h elapsed (after FX is ready)
+  setInterval(autoRefreshPrices, 60 * 60 * 1000); // re-check hourly while the tab stays open
 }
 
 init();

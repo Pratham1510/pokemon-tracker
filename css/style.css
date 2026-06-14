@@ -513,6 +513,7 @@ select.input option { background: var(--panel-solid); }
 #chart-change.down { color: var(--red); }
 #price-chart { width: 100%; height: 260px; display: block; }
 .tcg-link-info { font-size: 12px; margin-top: 10px; }
+.auto-note { margin: -8px 0 14px; }
 
 .price-form { display: flex; gap: 8px; margin-bottom: 12px; }
 .price-form .input { flex: 1; min-width: 0; }
